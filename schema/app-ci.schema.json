@@ -28,7 +28,7 @@
   "$defs": {
     "script": {
       "type": "string", "maxLength": 200,
-      "pattern": "^(?:(?:[A-Za-z0-9_-]+|\\.github)/)?(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+\\.sh$"
+      "pattern": "^(?:(?:[A-Za-z0-9_-]+|\\.github)/)?(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+\\.sh$(?![\\s\\S])"
     }
   }
 }

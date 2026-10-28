@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from jsonschema import ValidationError
 
@@ -20,6 +21,7 @@ def load(name):
 policy = load("policy")
 baseline = load("baseline")
 render = load("render_rulesets")
+preview = load("preview")
 
 
 class PolicyTests(unittest.TestCase):
@@ -97,7 +99,7 @@ class PolicyTests(unittest.TestCase):
 
     def test_unsafe_extensions(self):
         for path in ("../escape.sh", "/tmp/file.sh", ".github/../escape.sh",
-                     ".github/ci/a.sh;echo", ".github/ci/a\n.sh", "echo hello"):
+                     ".github/ci/a.sh;echo", ".github/ci/a\n.sh", ".github/ci/a.sh\n", "echo hello"):
             with self.subTest(path=path):
                 self.manifest["extensions"] = {"preflight": path}
                 with self.assertRaises((ValueError, ValidationError)):
@@ -233,6 +235,79 @@ class DeploymentTests(unittest.TestCase):
         for sha in ("main", "latest", "a" * 39):
             with self.assertRaises(ValueError):
                 render.render(sha)
+
+
+class PreviewTests(unittest.TestCase):
+    def test_six_profiles_at_immutable_revisions(self):
+        baselines, repositories = preview.matrices()
+        self.assertEqual(len(baselines["include"]), 6)
+        self.assertEqual(len(repositories["include"]), 3)
+        self.assertEqual({p["id"] for p in baselines["include"]}, {"java", "node", "python", "dotnet"})
+
+    def test_mutable_missing_extra_fixtures_rejected(self):
+        policy_data = policy.load_json(ROOT / "policy/repositories.json")
+        for fixtures in ({}, {"unapproved/repo": "a" * 40},
+                         {repo: "main" for repo in policy_data}):
+            with self.subTest(fixtures=fixtures), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / "policy").mkdir()
+                (root / "policy/repositories.json").write_text(json.dumps(policy_data))
+                (root / "policy/fixtures.json").write_text(json.dumps(fixtures))
+                with patch.object(preview, "ROOT", root), self.assertRaises(ValueError):
+                    preview.matrices()
+
+
+class BuildConfigurationTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+
+    def pom(self, extra="", version="3.2.3"):
+        plugins = f"""
+        <plugin><artifactId>maven-surefire-plugin</artifactId><version>{version}</version>
+        {extra}</plugin>
+        <plugin><artifactId>maven-checkstyle-plugin</artifactId><version>3.3.1</version></plugin>
+        <plugin><artifactId>jacoco-maven-plugin</artifactId><version>0.8.11</version></plugin>
+        """
+        text = f"""<project xmlns="http://maven.apache.org/POM/4.0.0">
+        <properties><java.version>17</java.version><maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target></properties>
+        <build><plugins>{plugins}</plugins></build></project>"""
+        (self.root / "pom.xml").write_text(text)
+
+    def test_java_baseline_plugins(self):
+        self.pom()
+        baseline.validate_java(self.root, False)
+        with self.assertRaises(ValueError):
+            baseline.validate_java(self.root, True)
+
+    def test_java_skip_exclusions_and_selectors_rejected(self):
+        for setting in ("<skipTests>true</skipTests>", "<testFailureIgnore>true</testFailureIgnore>",
+                        "<excludes><exclude>**/*</exclude></excludes>",
+                        "<includes><include>OnlyOneTest</include></includes>"):
+            self.pom(extra=f"<configuration>{setting}</configuration>")
+            with self.subTest(setting=setting), self.assertRaises(ValueError):
+                baseline.validate_java(self.root, False)
+
+    def test_java_plugin_downgrade_rejected(self):
+        self.pom(version="2.0.0")
+        with self.assertRaises(ValueError):
+            baseline.validate_java(self.root, False)
+
+    def test_node_noop_build_rejected_before_execution(self):
+        (self.root / "package.json").write_text(json.dumps({"scripts": {"lint": "true", "build": "true"}}))
+        with self.assertRaises(ValueError), patch.object(baseline, "run") as run:
+            baseline.node(self.root)
+        run.assert_not_called()
+
+    def test_disabled_dotnet_project_rejected(self):
+        (self.root / "Tests").mkdir()
+        (self.root / "Tests/DotnetApi.Tests.csproj").write_text(
+            "<Project><PropertyGroup><IsTestProject>false</IsTestProject></PropertyGroup></Project>")
+        with self.assertRaises(ValueError), patch.object(baseline, "run") as run:
+            baseline.dotnet(self.root)
+        run.assert_not_called()
 
 
 if __name__ == "__main__":
