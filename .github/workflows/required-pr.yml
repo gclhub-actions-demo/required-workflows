@@ -77,7 +77,8 @@ jobs:
           ref: ${{ github.workflow_sha }}
           path: central
           persist-credentials: false
-      - uses: ./central/.github/actions/toolchains
+      - id: tools
+        uses: ./central/.github/actions/toolchains
       - run: python -I -m pip install -r central/requirements.txt
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -89,6 +90,7 @@ jobs:
           PROJECT_ID: ${{ matrix.id }}
           JEST_JUNIT_OUTPUT_DIR: reports
           JEST_JUNIT_OUTPUT_NAME: junit.xml
+          CENTRAL_DOTNET_SDK: ${{ steps.tools.outputs.dotnet-version }}
         run: |
           python -I central/scripts/policy.py validate --root app --repository "$APP_REPOSITORY"
           python -I central/scripts/baseline.py --root app --repository "$APP_REPOSITORY" --id "$PROJECT_ID"

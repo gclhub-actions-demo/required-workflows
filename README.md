@@ -67,7 +67,10 @@ generated output to a baseline. Postflight must inspect a clean source checkout;
 it cannot assume baseline build outputs exist.
 
 Toolchains are centrally provisioned: Temurin Java 17, Node 22, Python 3.11,
-and .NET SDK 8. The Python helper runs in isolated mode (`python -I`) outside
+and .NET SDK 8. The .NET baseline writes a local `global.json` selecting the exact
+SDK 8 version emitted by setup-dotnet, avoiding a hosted runner's newer
+preinstalled SDK silently taking precedence. App SDK downgrades are rejected.
+The Python helper runs in isolated mode (`python -I`) outside
 the app's import path; Python subprocesses use the already selected absolute
 `sys.executable`. The final gate never checks out or executes application code.
 
@@ -191,6 +194,13 @@ cancel-in-progress concurrency. Merge queue is **not configured or supported
 by this initial deployment**; before enabling it, add and verify `merge_group`
 event, configuration, and checkout semantics. CodeQL init/analyze are not
 allowed inside ruleset workflows; this framework intentionally contains neither.
+
+GitHub does not start ruleset workflows for events created with `GITHUB_TOKEN`.
+Automation that opens or updates PRs must use a separately approved GitHub App
+or user credential that produces eligible events; do not grant bypass permission
+or add credentials here as a workaround. An already blocked bot-created PR needs
+an eligible new commit, branch update, or close/reopen event. Required workflow
+enforcement must remain blocking when no eligible workflow run exists.
 
 References:
 [ruleset troubleshooting](https://docs.github.com/en/enterprise-cloud@latest/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/troubleshooting-rules),

@@ -6,6 +6,7 @@ trusted workflow identity do not make arbitrary application build code attestabl
 
 import argparse
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -70,6 +71,32 @@ def coverage_xml(path, kind, minimum):
         raise ValueError("missing or invalid measured coverage")
     if minimum is not None and 100 * covered / total < minimum:
         raise ValueError("coverage below central minimum")
+
+
+def node_coverage(project):
+    files = json.loads((project / "coverage/coverage-final.json").read_text())
+    if not files:
+        raise ValueError("missing measured Node coverage")
+    totals = {metric: [] for metric in ("branches", "functions", "lines", "statements")}
+    for data in files.values():
+        statements = data["s"]
+        totals["statements"].extend(statements.values())
+        totals["functions"].extend(data["f"].values())
+        totals["branches"].extend(hit for branch in data["b"].values() for hit in branch)
+        lines = {}
+        for key, hits in statements.items():
+            line = data["statementMap"][key]["start"]["line"]
+            lines[line] = max(lines.get(line, 0), hits)
+        totals["lines"].extend(lines.values())
+    summary = json.loads((project / "coverage/coverage-summary.json").read_text())["total"]
+    for metric, hits in totals.items():
+        if not hits or any(not isinstance(hit, (int, float)) or hit < 0 for hit in hits):
+            raise ValueError(f"missing or invalid measured Node coverage: {metric}")
+        covered = sum(hit > 0 for hit in hits)
+        if 100 * covered / len(hits) < 70:
+            raise ValueError(f"Node coverage below central minimum: {metric}")
+        if summary[metric]["covered"] != covered or summary[metric]["total"] != len(hits):
+            raise ValueError(f"Node summary differs from measured coverage: {metric}")
 
 
 def validate_java(project, integration):
@@ -149,14 +176,7 @@ def node(project):
         str(CENTRAL / "policy/jest.config.cjs"), "--ci", "--runInBand", "--coverage",
         cwd=project)
     test_reports([project / "reports/junit.xml"])
-    report = json.loads((project / "coverage/coverage-summary.json").read_text())["total"]
-    for metric in ("branches", "functions", "lines", "statements"):
-        counts = report[metric]
-        if (counts["total"] <= 0 or counts["covered"] > counts["total"]
-                or 100 * counts["covered"] / counts["total"] < 70):
-            raise ValueError(f"missing or low Node coverage: {metric}")
-    if not json.loads((project / "coverage/coverage-final.json").read_text()):
-        raise ValueError("missing measured Node coverage")
+    node_coverage(project)
 
 
 def python(project, minimum):
@@ -197,6 +217,17 @@ def dotnet(project):
             if config != project / "DotnetApi.csproj" or exclusion.attrib["Remove"] != "Tests/**":
                 raise ValueError("source/test removal is not permitted")
     clear_outputs(project, ["TestResults"])
+    sdk = os.environ["CENTRAL_DOTNET_SDK"]
+    if not re.fullmatch(r"8\.0\.\d+", sdk):
+        raise ValueError("central .NET 8 SDK setup output required")
+    global_json = project / "global.json"
+    if global_json.is_symlink():
+        raise ValueError("global.json cannot be symlinked")
+    if global_json.exists():
+        configured = json.loads(global_json.read_text()).get("sdk", {}).get("version", "")
+        if not re.fullmatch(r"8\.0\.\d+", configured):
+            raise ValueError("application cannot downgrade or replace .NET SDK baseline")
+    global_json.write_text(json.dumps({"sdk": {"version": sdk, "rollForward": "disable"}}) + "\n")
     solution = project / "DotnetApi.sln"
     run("dotnet", "restore", str(solution), cwd=project)
     run("dotnet", "format", str(solution), "--verify-no-changes", "--no-restore", cwd=project)

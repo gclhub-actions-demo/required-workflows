@@ -1,6 +1,8 @@
 import importlib.util
 import json
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -216,6 +218,48 @@ class EvidenceTests(unittest.TestCase):
             '</package><counter type="LINE" covered="9" missed="1"/></report>')
         with self.assertRaises(ValueError):
             baseline.coverage_xml(self.path, "jacoco", 70)
+
+    def test_node_summary_must_match_instrumented_hits(self):
+        project = self.path.parent
+        (project / "coverage").mkdir()
+        data = {"file.ts": {
+            "s": {"0": 1}, "f": {"0": 1}, "b": {"0": [1, 1]},
+            "statementMap": {"0": {"start": {"line": 1}}}
+        }}
+        (project / "coverage/coverage-final.json").write_text(json.dumps(data))
+        summary = {metric: {"covered": total, "total": total}
+                   for metric, total in (("statements", 1), ("lines", 1), ("functions", 1), ("branches", 2))}
+        (project / "coverage/coverage-summary.json").write_text(json.dumps({"total": summary}))
+        baseline.node_coverage(project)
+        data["file.ts"]["b"]["0"] = [0, 0]
+        (project / "coverage/coverage-final.json").write_text(json.dumps(data))
+        with self.assertRaises(ValueError):
+            baseline.node_coverage(project)
+
+
+class ExtensionExecutionTests(unittest.TestCase):
+    def test_positive_negative_and_import_isolation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".github/ci").mkdir(parents=True)
+            (root / "apps/python-service").mkdir(parents=True)
+            manifest = {
+                "version": 1, "projects": [{"id": "python", "path": "apps/python-service"}],
+                "extensions": {"preflight": ".github/ci/preflight.sh"}
+            }
+            (root / ".github/app-ci.json").write_text(json.dumps(manifest))
+            (root / "jsonschema.py").write_text("raise RuntimeError('untrusted import')\n")
+            command = [sys.executable, "-I", str(ROOT / "scripts/extension.py"),
+                       "--root", str(root), "--repository", "gclhub-actions-demo/python-app",
+                       "--phase", "preflight"]
+            script = root / ".github/ci/preflight.sh"
+            for content, success in (("exit 0\n", True), ("exit 7\n", False)):
+                script.write_text(content)
+                result = subprocess.run(command, cwd=root, capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode == 0, success, result.stderr)
+            script.unlink()
+            result = subprocess.run(command, cwd=root, capture_output=True, timeout=30)
+            self.assertNotEqual(result.returncode, 0)
 
 
 class DeploymentTests(unittest.TestCase):
