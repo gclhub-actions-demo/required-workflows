@@ -37,7 +37,11 @@ def test_reports(paths):
         raise ValueError("missing test reports")
     executed = 0
     for path in paths:
-        cases = list(ET.parse(path).getroot().iter("testcase"))
+        root = ET.parse(path).getroot()
+        if any(int(suite.attrib.get(key, 0)) > 0
+               for suite in root.iter() for key in ("failures", "errors")):
+            raise ValueError(f"failed test report summary: {path}")
+        cases = list(root.iter("testcase"))
         executed += sum(1 for case in cases if case.find("skipped") is None)
         if any(case.find("failure") is not None or case.find("error") is not None for case in cases):
             raise ValueError(f"failed test report: {path}")

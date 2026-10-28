@@ -191,7 +191,8 @@ class EvidenceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             baseline.test_reports([])
         for content in ('<testsuite/>', '<testsuite><testcase><skipped/></testcase></testsuite>',
-                        '<testsuite><testcase><failure/></testcase></testsuite>'):
+                        '<testsuite><testcase><failure/></testcase></testsuite>',
+                        '<testsuite failures="1"><testcase/></testsuite>'):
             self.path.write_text(content)
             with self.subTest(content=content), self.assertRaises(ValueError):
                 baseline.test_reports([self.path])
@@ -352,6 +353,42 @@ class BuildConfigurationTests(unittest.TestCase):
         with self.assertRaises(ValueError), patch.object(baseline, "run") as run:
             baseline.dotnet(self.root)
         run.assert_not_called()
+
+    def dotnet_project(self):
+        (self.root / "Tests").mkdir()
+        (self.root / "Tests/DotnetApi.Tests.csproj").write_text("""
+        <Project><PropertyGroup><TargetFramework>net8.0</TargetFramework>
+        <IsTestProject>true</IsTestProject></PropertyGroup><ItemGroup>
+        <PackageReference Include="Microsoft.NET.Test.Sdk"/>
+        <PackageReference Include="coverlet.collector"/>
+        <PackageReference Include="xunit"/></ItemGroup></Project>
+        """)
+
+    def test_dotnet_sdk_downgrade_rejected(self):
+        self.dotnet_project()
+        with patch.dict("os.environ", {"CENTRAL_DOTNET_SDK": "7.0.100"}):
+            with self.assertRaises(ValueError), patch.object(baseline, "run") as run:
+                baseline.dotnet(self.root)
+        run.assert_not_called()
+
+    def test_dotnet_uses_exact_installed_sdk_and_real_report_paths(self):
+        self.dotnet_project()
+
+        def commands(*args, cwd):
+            if args[:2] == ("dotnet", "test"):
+                reports = cwd / "TestResults/run"
+                reports.mkdir(parents=True)
+                (cwd / "TestResults/test.trx").write_text(
+                    '<TestRun><Counters executed="10" passed="10" failed="0"/></TestRun>')
+                (reports / "coverage.cobertura.xml").write_text(
+                    '<coverage lines-valid="10" lines-covered="8"/>')
+
+        with patch.dict("os.environ", {"CENTRAL_DOTNET_SDK": "8.0.415"}):
+            with patch.object(baseline, "run", side_effect=commands) as run:
+                baseline.dotnet(self.root)
+        self.assertEqual(json.loads((self.root / "global.json").read_text()),
+                         {"sdk": {"version": "8.0.415", "rollForward": "disable"}})
+        self.assertEqual(run.call_count, 4)
 
 
 if __name__ == "__main__":

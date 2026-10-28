@@ -89,8 +89,6 @@ def main():
     matrix, extensions = validate(args.root.resolve(), args.repository)
     outputs = {
         "matrix": matrix, "extensions": extensions,
-        "preflight": {"include": [e for e in extensions if e["phase"] == "preflight"]},
-        "postflight": {"include": [e for e in extensions if e["phase"] == "postflight"]},
         "has_preflight": any(e["phase"] == "preflight" for e in extensions),
         "has_postflight": any(e["phase"] == "postflight" for e in extensions),
     }
