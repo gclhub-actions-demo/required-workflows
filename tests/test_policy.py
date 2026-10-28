@@ -220,6 +220,27 @@ class EvidenceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             baseline.coverage_xml(self.path, "jacoco", 70)
 
+    def test_jacoco_interface_only_package_has_no_line_counter(self):
+        self.path.write_text(
+            '<report><package name="repository"><class name="Repository"/></package>'
+            '<package name="service"><counter type="LINE" covered="9" missed="1"/></package>'
+            '<counter type="LINE" covered="9" missed="1"/></report>')
+        baseline.coverage_xml(self.path, "jacoco", 70)
+
+    def test_jacoco_executable_package_without_lines_fails(self):
+        self.path.write_text(
+            '<report><package name="noDebug"><counter type="INSTRUCTION" covered="1" missed="0"/>'
+            '</package><counter type="LINE" covered="9" missed="1"/></report>')
+        with self.assertRaises(ValueError):
+            baseline.coverage_xml(self.path, "jacoco", 70)
+
+    def test_jacoco_package_totals_must_match_report(self):
+        self.path.write_text(
+            '<report><package name="partial"><counter type="LINE" covered="1" missed="0"/>'
+            '</package><counter type="LINE" covered="9" missed="1"/></report>')
+        with self.assertRaises(ValueError):
+            baseline.coverage_xml(self.path, "jacoco", 70)
+
     def test_node_summary_must_match_instrumented_hits(self):
         project = self.path.parent
         (project / "coverage").mkdir()

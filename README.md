@@ -102,6 +102,10 @@ prevents app config replacing the baseline with a no-op. Python uses central
 pytest/coverage configuration and isolated flake8. .NET requires a real enabled
 test project, test SDK/collector, .NET 8 targets, and no new source-removal rules.
 The existing main project's `Tests/**` exclusion remains allowed.
+JaCoCo packages with no executable instructions (for example repository
+interfaces) have no LINE counter and are explicitly reported as N/A. Executable
+packages missing LINE data fail, and package LINE totals must match report
+totals; measured packages still require the unchanged 70% minimum.
 
 The final gate uses `always()`: policy and all matrix baselines must succeed.
 Configured extension jobs must succeed. Only an **absent** extension is expected

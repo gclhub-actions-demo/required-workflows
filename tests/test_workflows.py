@@ -56,6 +56,15 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("pull_request_target", text)
         self.assertNotIn("codeql-action", text)
 
+    def test_setup_actions_do_not_enable_implicit_caches(self):
+        action = yaml.load((ROOT / ".github/actions/toolchains/action.yml").read_text(),
+                           Loader=yaml.BaseLoader)
+        node = next(step for step in action["runs"]["steps"]
+                    if step.get("uses", "").startswith("actions/setup-node@"))
+        self.assertEqual(node["with"]["package-manager-cache"], "false")
+        for step in action["runs"]["steps"]:
+            self.assertNotIn("cache", step.get("with", {}))
+
 
 if __name__ == "__main__":
     unittest.main()

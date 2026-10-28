@@ -61,13 +61,29 @@ def coverage_xml(path, kind, minimum):
             packages = root.findall("./package")
             if not packages:
                 raise ValueError("missing JaCoCo package coverage")
+            package_covered = 0
+            package_total = 0
             for package in packages:
                 counter = package.find("./counter[@type='LINE']")
                 if counter is None:
-                    raise ValueError("missing package LINE counter")
-                count = int(counter.attrib["covered"]) + int(counter.attrib["missed"])
-                if count and 100 * int(counter.attrib["covered"]) / count < minimum:
+                    executable = [
+                        c for c in package.findall("counter")
+                        if c.attrib["type"] in ("INSTRUCTION", "BRANCH", "METHOD")
+                    ]
+                    if any(int(c.attrib["covered"]) + int(c.attrib["missed"]) > 0 for c in executable):
+                        raise ValueError("executable package missing LINE coverage")
+                    print(f"JaCoCo package {package.attrib.get('name')}: no executable lines (N/A)")
+                    continue
+                hit = int(counter.attrib["covered"])
+                count = hit + int(counter.attrib["missed"])
+                if hit < 0 or count < hit:
+                    raise ValueError("invalid package LINE counter")
+                package_covered += hit
+                package_total += count
+                if count and 100 * hit / count < minimum:
                     raise ValueError("package coverage below central minimum")
+            if package_covered != covered or package_total != total:
+                raise ValueError("package LINE coverage does not match report totals")
     else:
         total = int(root.attrib["lines-valid"])
         covered = int(root.attrib["lines-covered"])
