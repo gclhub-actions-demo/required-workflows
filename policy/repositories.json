@@ -1,0 +1,14 @@
+{
+  "gclhub-actions-demo/github-actions-demo": [
+    {"id": "java", "path": "apps/java-app", "coverage": 70, "integration": false},
+    {"id": "node", "path": "apps/nodejs-api", "coverage": 70},
+    {"id": "python", "path": "apps/python-service", "coverage": null},
+    {"id": "dotnet", "path": "apps/dotnet-api", "coverage": null}
+  ],
+  "gclhub-actions-demo/java-app-demo": [
+    {"id": "java", "path": ".", "coverage": 70, "integration": true}
+  ],
+  "gclhub-actions-demo/python-app": [
+    {"id": "python", "path": "apps/python-service", "coverage": 80}
+  ]
+}
