@@ -1,0 +1,41 @@
+{
+  "name": "Central application PR workflows",
+  "target": "branch",
+  "enforcement": "disabled",
+  "bypass_actors": [],
+  "conditions": {
+    "repository_name": {
+      "include": ["github-actions-demo", "java-app-demo", "python-app"],
+      "exclude": [".github"],
+      "protected": true
+    },
+    "ref_name": {"include": ["refs/heads/main"], "exclude": []}
+  },
+  "rules": [
+    {"type": "deletion"},
+    {"type": "non_fast_forward"},
+    {
+      "type": "pull_request",
+      "parameters": {
+        "dismiss_stale_reviews_on_push": true,
+        "require_code_owner_review": false,
+        "require_last_push_approval": false,
+        "required_approving_review_count": 0,
+        "required_review_thread_resolution": true
+      }
+    },
+    {
+      "type": "workflows",
+      "parameters": {
+        "do_not_enforce_on_create": false,
+        "workflows": [
+          {
+            "repository_id": 1437306918,
+            "path": ".github/workflows/required-pr.yml",
+            "sha": "REPLACE_WITH_APPROVED_CENTRAL_COMMIT_SHA"
+          }
+        ]
+      }
+    }
+  ]
+}
